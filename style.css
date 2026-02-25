@@ -1,0 +1,115 @@
+/* remove default body margin and set full screen layout */
+body {
+    margin: 0;  /* remove browser default spacing */
+    font-family: Arial, sans-serif;  /* set font */
+    /* gradient background */
+    background: linear-gradient(135deg, #1e3c72, #2a5298);
+    /* center container using flexbox */
+    display: flex;
+    justify-content: center;  /* horizontal center */
+    align-items: center;      /* vertical center */
+    height: 100vh;  /* full viewport height */
+}
+
+
+/* main white card container */
+.container {
+    background: white;   /* white background */
+    padding: 30px;       /* space inside box */
+    border-radius: 15px; /* rounded corners */
+    text-align: center;  /* center text */
+    width: 360px;        /* fixed width */
+    /* soft shadow for depth effect */
+    box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+}
+
+
+/* heading style */
+h1 {
+    margin-bottom: 10px; /* spacing below title */
+}
+
+
+/* status message styling */
+.status {
+    font-size: 18px;      /* larger text */
+    font-weight: bold;    /* bold text */
+    margin: 10px 0;       /* vertical spacing */
+}
+
+
+/* turn indicator styling */
+.turn {
+    margin-bottom: 10px;
+    color: #444;  /* dark gray color */
+}
+
+
+/* board container using css grid */
+.board {
+    display: grid;  /* enable grid layout */
+    /* create 3 equal columns */
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;      /* space between cells */
+    margin: 20px 0;
+}
+
+
+/* each cell in tic tac toe board */
+.cell {
+    width: 100px;
+    height: 100px;
+    font-size: 40px;   /* large X O */
+    font-weight: bold;
+    background: #f0f0f0;
+    /* center text inside cell using flexbox */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;  /* hand cursor */
+    border-radius: 10px;
+    transition: 0.2s;  /* smooth hover effect */
+}
+
+
+/* hover effect for cell */
+.cell:hover {
+    background: #ddd;
+}
+
+
+/* disabled cell styling */
+.cell.disabled {
+    cursor: not-allowed;  /* blocked cursor */
+    background: #eaeaea;
+}
+
+
+/* styling for X symbol */
+.cell.X {
+    color: #e74c3c;  /* red color */
+}
+
+
+/* styling for O symbol */
+.cell.O {
+    color: #3498db;  /* blue color */
+}
+
+
+/* reconnect button styling */
+.btn {
+    padding: 10px 20px;
+    font-size: 14px;
+    border: none;
+    border-radius: 8px;
+    background: #2a5298;
+    color: white;
+    cursor: pointer;
+}
+
+
+/* button hover effect */
+.btn:hover {
+    background: #1e3c72;
+}

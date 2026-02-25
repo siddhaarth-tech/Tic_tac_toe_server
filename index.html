@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+
+<!-- character encoding for proper text rendering -->
+<meta charset="UTF-8">
+
+<!-- page title shown in browser tab -->
+<title>Multiplayer Tic Tac Toe</title>
+
+<!-- external css file for styling -->
+<link rel="stylesheet" href="style.css">
+
+</head>
+<body>
+
+<!-- main wrapper container -->
+<div class="container">
+
+    <!-- main heading -->
+    <h1> Tic Tac Toe</h1>
+
+    <!-- shows connection status and game messages -->
+    <!-- example Connecting Waiting Win Draw -->
+    <div id="status" class="status">
+        Connecting to server...
+    </div>
+
+    <!-- displays whose turn it is -->
+    <div id="turn" class="turn"></div>
+
+    <!-- game board grid will be dynamically created by javascript -->
+    <!-- script.js will insert 9 cells inside this div -->
+    <div id="board" class="board"></div>
+
+    <!-- button to reconnect to websocket server -->
+    <!-- triggers reconnect logic in script.js -->
+    <button id="restart" class="btn">
+        Reconnect
+    </button>
+
+</div>
+
+<!-- external javascript file -->
+<!-- handles websocket connection and game logic -->
+<script src="script.js"></script>
+
+</body>
+</html>
