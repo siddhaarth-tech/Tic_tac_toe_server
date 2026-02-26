@@ -11,7 +11,6 @@ body {
     height: 100vh;  /* full viewport height */
 }
 
-
 /* main white card container */
 .container {
     background: white;   /* white background */
@@ -23,12 +22,10 @@ body {
     box-shadow: 0 10px 30px rgba(0,0,0,0.3);
 }
 
-
 /* heading style */
 h1 {
     margin-bottom: 10px; /* spacing below title */
 }
-
 
 /* status message styling */
 .status {
@@ -37,13 +34,11 @@ h1 {
     margin: 10px 0;       /* vertical spacing */
 }
 
-
 /* turn indicator styling */
 .turn {
-    margin-bottom: 10px;
-    color: #444;  /* dark gray color */
+    margin-bottom: 10px;  /* spacing below turn text */
+    color: #444;          /* dark gray color */
 }
-
 
 /* board container using css grid */
 .board {
@@ -51,14 +46,13 @@ h1 {
     /* create 3 equal columns */
     grid-template-columns: repeat(3, 1fr);
     gap: 10px;      /* space between cells */
-    margin: 20px 0;
+    margin: 20px 0; /* spacing above and below board */
 }
-
 
 /* each cell in tic tac toe board */
 .cell {
-    width: 100px;
-    height: 100px;
+    width: 100px;   /* fixed cell width */
+    height: 100px;  /* fixed cell height */
     font-size: 40px;   /* large X O */
     font-weight: bold;
     background: #f0f0f0;
@@ -69,47 +63,42 @@ h1 {
     cursor: pointer;  /* hand cursor */
     border-radius: 10px;
     transition: 0.2s;  /* smooth hover effect */
+    user-select: none; /* prevent text selection on double click */
 }
-
 
 /* hover effect for cell */
 .cell:hover {
-    background: #ddd;
+    background: #ddd;  /* slightly darker background */
 }
-
 
 /* disabled cell styling */
 .cell.disabled {
     cursor: not-allowed;  /* blocked cursor */
-    background: #eaeaea;
+    background: #eaeaea;  /* lighter gray */
 }
-
 
 /* styling for X symbol */
 .cell.X {
     color: #e74c3c;  /* red color */
 }
 
-
 /* styling for O symbol */
 .cell.O {
     color: #3498db;  /* blue color */
 }
 
-
-/* reconnect button styling */
+/* button styling */
 .btn {
-    padding: 10px 20px;
+    padding: 10px 20px;  /* inner spacing */
     font-size: 14px;
-    border: none;
+    border: none;        /* remove default border */
     border-radius: 8px;
     background: #2a5298;
     color: white;
-    cursor: pointer;
+    cursor: pointer;     /* hand cursor */
 }
-
 
 /* button hover effect */
 .btn:hover {
-    background: #1e3c72;
+    background: #1e3c72;  /* darker shade on hover */
 }

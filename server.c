@@ -1,21 +1,22 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <errno.h>
-#include <netdb.h>
-#include <sys/socket.h>
-#include <sys/epoll.h>
-#include <arpa/inet.h>
-#include <openssl/sha.h>
-#include <openssl/evp.h>
+#include <stdio.h>      // standard IO
+#include <stdlib.h>     // general utilities
+#include <string.h>     // string operations
+#include <unistd.h>     // close read
+#include <fcntl.h>      // fcntl open
+#include <errno.h>      // error handling
+#include <netdb.h>      // getaddrinfo
+#include <sys/socket.h> // socket APIs
+#include <sys/epoll.h>  // epoll APIs
+#include <arpa/inet.h>  // internet structures
+#include <openssl/sha.h> // SHA1 hashing
+#include <openssl/evp.h> // Base64 encoding
 
-#define PORT "8080"
-#define MAX_EVENTS 128
-#define BUFFER_SIZE 8192
-#define MAX_GAMES 100
-#define WS_GUID "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+#define PORT "8080"        // server listening port
+#define MAX_EVENTS 128     // max epoll events per wait
+#define BUFFER_SIZE 8192   // socket read buffer size
+#define MAX_GAMES 100      // max simultaneous games
+#define WS_GUID "258EAFA5-E914-47DA-95CA-C5AB0DC85B11" // websocket magic guid
+
 
 /*
 Game structure stores one active match.
@@ -54,6 +55,7 @@ Used for static HTTP serving.
 */
 const char* get_mime_type(const char *path) {
 
+    // strstr checks if substring exists
     if(strstr(path, ".js")) return "application/javascript";
     if(strstr(path, ".css")) return "text/css";
     if(strstr(path, ".html")) return "text/html";
@@ -69,9 +71,11 @@ void serve_file(int client_fd, const char *path) {
 
     char filepath[256];
 
+    // strcmp compares strings
     if(strcmp(path, "/") == 0)
         strcpy(filepath, "index.html");
     else
+        // snprintf safe formatted copy
         snprintf(filepath, sizeof(filepath), "%s", path + 1);
 
     // open(file, O_RDONLY)
@@ -83,7 +87,7 @@ void serve_file(int client_fd, const char *path) {
             "HTTP/1.1 404 Not Found\r\n"
             "Content-Length: 0\r\n\r\n";
 
-        // send(socket, buffer, len, flags)
+        // send(socket, buffer, length, flags)
         send(client_fd, not_found, strlen(not_found), 0);
         return;
     }
@@ -105,6 +109,7 @@ void serve_file(int client_fd, const char *path) {
     while((bytes = read(fd, buffer, BUFFER_SIZE)) > 0)
         send(client_fd, buffer, bytes, 0);
 
+    // close(fd) release descriptor
     close(fd);
 }
 
@@ -170,6 +175,7 @@ void cleanup_game(Game *g){
 
 /*
 Send small WebSocket text frame.
+Build frame header and attach payload.
 */
 int ws_send(int fd,const char *msg){
 
@@ -260,8 +266,40 @@ void handle_move(int client_fd,int position){
 
 
 /*
+Handling forced exit request
+Opponent is declared winner
+*/
+void handle_exit(int client_fd){
+
+    Game *g = find_game(client_fd);
+    if(!g) return;
+
+    int opponent =
+        (g->player1 == client_fd) ?
+        g->player2 : g->player1;
+
+    if(opponent > 0){
+
+        char winner =
+            (g->player1 == client_fd) ? 'O' : 'X';
+
+        char winmsg[64];
+
+        snprintf(winmsg,sizeof(winmsg),
+        "{\"type\":\"win\",\"winner\":\"%c\"}",
+        winner);
+
+        ws_send(opponent, winmsg);
+    }
+
+    cleanup_game(g);
+}
+
+
+/*
 Perform WebSocket handshake.
-Generate Sec-WebSocket-Accept.
+Extract client key, append GUID,
+hash with SHA1 and Base64 encode.
 */
 int websocket_handshake(int client_fd, char *request){
 
@@ -269,10 +307,7 @@ int websocket_handshake(int client_fd, char *request){
     Find "Sec-WebSocket-Key" header inside HTTP request.
     */
     char *key=strstr(request,"Sec-WebSocket-Key:");
-
-    if(!key) 
-        return -1;  // handshake invalid if header missing
-
+    if(!key) return -1;
 
     /*
     Move pointer after header name.
@@ -280,10 +315,7 @@ int websocket_handshake(int client_fd, char *request){
     */
     key+=19;
 
-    /*
-    Skip spaces between colon and actual key value.
-    */
-    while(*key==' ') 
+    while(*key==' ')
         key++;
 
 
@@ -373,35 +405,36 @@ int main(){
     struct addrinfo hints,*res;
     int server_fd;
 
+    // memset initialize struct
     memset(&hints,0,sizeof(hints));
 
     hints.ai_family=AF_UNSPEC;
     hints.ai_socktype=SOCK_STREAM;
     hints.ai_flags=AI_PASSIVE;
 
-    // getaddrinfo(node, service, hints, result)
+    // getaddrinfo resolve address
     getaddrinfo(NULL,PORT,&hints,&res);
 
-    // socket(domain,type,protocol)
+    // socket create endpoint
     server_fd=socket(res->ai_family,
                      res->ai_socktype,
                      res->ai_protocol);
 
     int yes=1;
 
-    // setsockopt(socket, level, option, value, size)
+    // setsockopt reuse address
     setsockopt(server_fd,SOL_SOCKET,
                SO_REUSEADDR,&yes,sizeof(yes));
 
-    // bind(socket,address,len)
+    // bind attach socket to port
     bind(server_fd,res->ai_addr,res->ai_addrlen);
 
-    // listen(socket,backlog)
+    // listen start listening
     listen(server_fd,20);
 
     set_nonblocking(server_fd);
 
-    // epoll_create1(flags)
+    // epoll_create1 create epoll instance
     int epoll_fd=epoll_create1(0);
 
     struct epoll_event ev,events[MAX_EVENTS];
@@ -409,12 +442,12 @@ int main(){
     ev.events=EPOLLIN;
     ev.data.fd=server_fd;
 
-    // epoll_ctl(epollfd, operation, fd, event)
+    // epoll_ctl add server socket
     epoll_ctl(epoll_fd,EPOLL_CTL_ADD,
               server_fd,&ev);
 
     printf("Server running on http://localhost:8080\n");
-
+    
     while(1){
 
         // epoll_wait(epollfd, events, maxevents, timeout)
@@ -451,10 +484,16 @@ int main(){
                          buffer,BUFFER_SIZE,0);
 
                 if(bytes<=0){
+
+                    handle_exit(client_fd);
+
+                    if(waiting_player == client_fd)
+                        waiting_player = -1;
+
                     close(client_fd);
                     continue;
                 }
-
+                
                 buffer[bytes]='\0';
 
                 if(strstr(buffer,"Upgrade: websocket")){
@@ -478,13 +517,11 @@ int main(){
                            method,path);
 
                     serve_file(client_fd,path);
-
                     close(client_fd);
                 }
                 else{
 
                     int payload_len=buffer[1]&127;
-
                     unsigned char *mask=
                         (unsigned char*)(buffer+2);
 
@@ -497,10 +534,20 @@ int main(){
 
                     int pos;
 
-                    if(sscanf(data,
-                    "{\"type\":\"move\",\"position\":%d}",
-                    &pos)==1)
-                        handle_move(client_fd,pos);
+                    if(strstr(data, "\"type\":\"move\"")){
+
+                        int pos;
+                        if(sscanf(data,
+                        "{\"type\":\"move\",\"position\":%d}",
+                        &pos)==1)
+                            handle_move(client_fd,pos);
+                    }
+                    else if(strstr(data, "\"type\":\"exit\"")){
+
+                        handle_exit(client_fd);
+
+                        close(client_fd);
+                    }
                 }
             }
         }

@@ -18,7 +18,7 @@
 <div class="container">
 
     <!-- main heading -->
-    <h1> Tic Tac Toe</h1>
+    <h1>Tic Tac Toe</h1>
 
     <!-- shows connection status and game messages -->
     <!-- example Connecting Waiting Win Draw -->
@@ -33,10 +33,11 @@
     <!-- script.js will insert 9 cells inside this div -->
     <div id="board" class="board"></div>
 
-    <!-- button to reconnect to websocket server -->
-    <!-- triggers reconnect logic in script.js -->
-    <button id="restart" class="btn">
-        Reconnect
+    <!-- restart / end game button -->
+    <!-- hidden initially until connection established -->
+    <!-- display controlled dynamically by script.js -->
+    <button id="restart" class="btn" style="display:none;">
+        End Game
     </button>
 
 </div>

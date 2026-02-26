@@ -22,8 +22,6 @@ let board = Array(9).fill("");
 let gameActive = false;
 
 
-/* ================= CONNECT TO SERVER ================= */
-
 function connect() {
 
     // create websocket connection to server
@@ -32,7 +30,14 @@ function connect() {
 
     // triggered when connection established
     socket.onopen = () => {
+
         statusDiv.textContent = "Connected. Waiting for opponent...";
+
+        // clear turn text until game starts
+        turnDiv.textContent = "";
+
+        // hide restart button while waiting
+        restartBtn.style.display = "none";
     };
 
     // triggered when server sends message
@@ -52,9 +57,15 @@ function connect() {
 
             gameActive = true;
 
-            statusDiv.textContent = "Game started!";
+            statusDiv.textContent =
+                "Game started! You are " + mySymbol;
 
             updateTurnUI();
+
+            renderBoard(); 
+            // End Game during active match
+            restartBtn.style.display = "inline-block";
+            restartBtn.textContent = "End Game";
         }
 
         // board update message
@@ -77,11 +88,16 @@ function connect() {
             gameActive = false;
 
             if (data.winner === mySymbol)
-                statusDiv.textContent = " You Win!";
+                statusDiv.textContent = "You Win!";
             else
-                statusDiv.textContent = " You Lose!";
+                statusDiv.textContent = "You Lose!";
 
+            // clear turn display after game ends
             turnDiv.textContent = "";
+
+            // change button to New Game after match ends
+            restartBtn.style.display = "inline-block";
+            restartBtn.textContent = "New Game";
         }
 
         // draw message
@@ -89,43 +105,34 @@ function connect() {
 
             gameActive = false;
 
-            statusDiv.textContent = " It's a Draw!";
+            statusDiv.textContent = "It's a Draw!";
 
             turnDiv.textContent = "";
-        }
 
-        // error message from server
-        if (data.type === "error") {
-            alert(data.message); // alert shows popup
-        }
-
-        // opponent disconnected
-        if (data.type === "opponent_left") {
-
-            gameActive = false;
-
-            statusDiv.textContent = "Opponent disconnected.";
-
-            turnDiv.textContent = "";
+            // allow starting new game
+            restartBtn.style.display = "inline-block";
+            restartBtn.textContent = "New Game";
         }
     };
 
     // triggered when websocket closes
     socket.onclose = () => {
 
+        // ignore unexpected close during active game
+        if (gameActive) return;
+
         gameActive = false;
 
-        statusDiv.textContent = "Disconnected.";
-
-        turnDiv.textContent = "";
+        // show button to allow reconnect
+        restartBtn.style.display = "inline-block";
+        restartBtn.textContent = "New Game";
     };
 }
 
 
-/* ================= UPDATE TURN UI ================= */
-
 function updateTurnUI() {
 
+    // if game not active do nothing
     if (!gameActive) return;
 
     if (myTurn)
@@ -135,9 +142,6 @@ function updateTurnUI() {
         turnDiv.textContent =
             "Opponent's Turn";
 }
-
-
-/* ================= RENDER BOARD ================= */
 
 function renderBoard() {
 
@@ -161,6 +165,7 @@ function renderBoard() {
             // classList.add adds css class
             div.classList.add(cell);
 
+            // prevent clicking filled cells
             div.classList.add("disabled");
         }
 
@@ -171,8 +176,10 @@ function renderBoard() {
         // click event for each cell
         div.onclick = () => {
 
+            // prevent move if not allowed
             if (!myTurn || !gameActive) return;
 
+            // prevent overwriting existing move
             if (board[index] !== "") return;
 
             // send move to server
@@ -189,12 +196,33 @@ function renderBoard() {
 }
 
 
-/* ================= RECONNECT BUTTON ================= */
-
 // triggered when restart button clicked
 restartBtn.onclick = () => {
 
-    // reset board
+    // If game running then send exit to server
+    if (gameActive) {
+
+        // notify server that player exited
+        socket.send(JSON.stringify({
+            type: "exit"
+        }));
+
+        gameActive = false;
+
+        statusDiv.textContent =
+            "You ended the game.";
+
+        turnDiv.textContent = "";
+
+        // change button to New Game
+        restartBtn.textContent = "New Game";
+
+        return;
+    }
+
+    // Start new game
+
+    // reset local board
     board = Array(9).fill("");
 
     renderBoard();
@@ -203,6 +231,7 @@ restartBtn.onclick = () => {
     connect();
 };
 
+//Initialised from here
 
 // initial rendering
 renderBoard();
