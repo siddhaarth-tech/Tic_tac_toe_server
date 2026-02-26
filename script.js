@@ -71,15 +71,15 @@ function connect() {
         // board update message
         if (data.type === "update") {
 
-            // update local board
+            // update board first
             board[data.position] = data.symbol;
 
-            renderBoard();
-
-            // if opponent played now it is my turn
+            // update turn BEFORE rendering
             myTurn = (data.symbol !== mySymbol);
 
             updateTurnUI();
+
+            renderBoard();
         }
 
         // win message
@@ -165,22 +165,42 @@ function renderBoard() {
             // classList.add adds css class
             div.classList.add(cell);
 
-            // prevent clicking filled cells
+            // prevent clicking filled cells permanently
             div.classList.add("disabled");
         }
 
-        // disable if not my turn or game inactive
-        if (!myTurn || !gameActive)
+        // if game not active, disable everything
+        if (!gameActive) {
             div.classList.add("disabled");
+        }
+
+        // if game active but NOT your turn
+        if (gameActive && !myTurn) {
+            div.classList.add("disabled");
+        }
+
+        // if game active AND your turn
+        if (gameActive && myTurn) {
+
+            // enable only empty cells
+            if (cell === "") {
+                div.classList.remove("disabled");
+            }
+        }
 
         // click event for each cell
         div.onclick = () => {
 
-            // prevent move if not allowed
-            if (!myTurn || !gameActive) return;
+            // allow only during your turn and active game
+            if (!gameActive || !myTurn) return;
 
             // prevent overwriting existing move
             if (board[index] !== "") return;
+
+            // immediately disable board after selecting
+            // prevents double clicking before server responds
+            myTurn = false;
+            renderBoard();
 
             // send move to server
             // JSON.stringify converts object to string
@@ -200,7 +220,7 @@ function renderBoard() {
 restartBtn.onclick = () => {
 
     // If game running then send exit to server
-    if (gameActive) {
+    if (gameActive && restartBtn.textContent==="End Game") {
 
         // notify server that player exited
         socket.send(JSON.stringify({
