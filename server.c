@@ -1,8 +1,8 @@
 #include <stdio.h>      // standard IO
 #include <stdlib.h>     // general utilities
 #include <string.h>     // string operations
-#include <unistd.h>     // close read
-#include <fcntl.h>      // fcntl open
+#include <unistd.h>     // close, read
+#include <fcntl.h>      // fcntl
 #include <errno.h>      // error handling
 #include <netdb.h>      // getaddrinfo
 #include <sys/socket.h> // socket APIs
@@ -10,6 +10,7 @@
 #include <arpa/inet.h>  // internet structures
 #include <openssl/sha.h> // SHA1 hashing
 #include <openssl/evp.h> // Base64 encoding
+#include <sys/select.h>  // FD_SETSIZE
 
 #define PORT "8080"        // server listening port
 #define MAX_EVENTS 128     // max epoll events per wait
@@ -20,8 +21,12 @@
 
 /*
 Game structure stores one active match.
-Contains two player sockets, board state,
-current turn, and active flag.
+Each game contains:
+- player1 socket
+- player2 socket
+- 3x3 board (9 cells)
+- current turn
+- active flag
 */
 typedef struct {
     int player1;     
@@ -31,13 +36,31 @@ typedef struct {
     int active;      
 } Game;
 
+
+/* Global game storage */
 Game games[MAX_GAMES];   
+
+/* 
+If only one player is connected,
+he waits here until second player joins
+*/
 int waiting_player = -1; 
 
 
 /*
-Enable non blocking mode on socket.
-Required for epoll based event loop.
+Track whether a client has upgraded to WebSocket.
+0 = HTTP connection
+1 = WebSocket connection
+This prevents checking "Upgrade: websocket"
+multiple times for same client.
+*/
+int is_websocket[FD_SETSIZE] = {0};
+
+
+/*
+Enable non-blocking mode on socket.
+Required because epoll works best
+with non-blocking file descriptors.
 */
 int set_nonblocking(int fd) {
 
@@ -50,8 +73,8 @@ int set_nonblocking(int fd) {
 
 
 /*
-Return mime type based on extension.
-Used for static HTTP serving.
+Return MIME type based on file extension.
+Used while serving static HTTP files.
 */
 const char* get_mime_type(const char *path) {
 
@@ -64,25 +87,26 @@ const char* get_mime_type(const char *path) {
 
 
 /*
-Serve static file for HTTP GET.
-Sends header and file content.
+Serve static file for HTTP GET request.
+Sends HTTP header followed by file content.
 */
 void serve_file(int client_fd, const char *path) {
 
     char filepath[256];
 
-    // strcmp compares strings
+    /* If root path "/", serve index.html */
     if(strcmp(path, "/") == 0)
         strcpy(filepath, "index.html");
     else
         // snprintf safe formatted copy
         snprintf(filepath, sizeof(filepath), "%s", path + 1);
 
-    // open(file, O_RDONLY)
+    /* Open requested file */
     int fd = open(filepath, O_RDONLY);
 
     if(fd < 0) {
 
+        /* If file not found, return 404 */
         const char *not_found =
             "HTTP/1.1 404 Not Found\r\n"
             "Content-Length: 0\r\n\r\n";
@@ -92,6 +116,7 @@ void serve_file(int client_fd, const char *path) {
         return;
     }
 
+    /* Send HTTP 200 header */
     char header[256];
 
     snprintf(header, sizeof(header),
@@ -102,6 +127,7 @@ void serve_file(int client_fd, const char *path) {
 
     send(client_fd, header, strlen(header), 0);
 
+    /* Send file content */
     char buffer[BUFFER_SIZE];
     int bytes;
 
@@ -114,18 +140,14 @@ void serve_file(int client_fd, const char *path) {
 }
 
 
-/*
-Initialize tic tac toe board.
-*/
+/* Initialize board with empty spaces */
 void init_board(char *b){
     for(int i=0;i<9;i++)
         b[i]=' ';
 }
 
 
-/*
-Check win condition.
-*/
+/* Check win combinations */
 int check_winner(char *b){
 
     int win[8][3]={{0,1,2},{3,4,5},{6,7,8},
@@ -142,9 +164,7 @@ int check_winner(char *b){
 }
 
 
-/*
-Check draw condition.
-*/
+/* Check draw condition */
 int check_draw(char *b){
     for(int i=0;i<9;i++)
         if(b[i]==' ') return 0;
@@ -152,9 +172,7 @@ int check_draw(char *b){
 }
 
 
-/*
-Find game for given client.
-*/
+/* Find game that contains this client */
 Game* find_game(int client){
     for(int i=0;i<MAX_GAMES;i++)
         if(games[i].active &&
@@ -165,17 +183,17 @@ Game* find_game(int client){
 }
 
 
-/*
-Mark game inactive.
-*/
+/* Mark game inactive */
 void cleanup_game(Game *g){
     g->active=0;
 }
 
-
 /*
-Send small WebSocket text frame.
-Build frame header and attach payload.
+Send a small WebSocket text frame.
+Frame format:
+Byte 1 -> FIN + opcode
+Byte 2 -> payload length
+Then payload
 */
 int ws_send(int fd,const char *msg){
 
@@ -194,7 +212,7 @@ int ws_send(int fd,const char *msg){
 
 /*
 Start new game between two players.
-Assign symbols and notify.
+Assign symbols and notify both players.
 */
 void start_game(int p1,int p2){
 
@@ -228,10 +246,17 @@ void handle_move(int client_fd,int position){
 
     char symbol=(g->player1==client_fd)?'X':'O';
 
+    /* Invalid move check:
+       - Not your turn
+       - Position already filled
+    */
     if(g->turn!=symbol || g->board[position]!=' ')
         return;
 
+    /* Apply move */
     g->board[position]=symbol;
+
+    /* Switch turn */
     g->turn=(symbol=='X')?'O':'X';
 
     char update[128];
@@ -240,9 +265,11 @@ void handle_move(int client_fd,int position){
     "{\"type\":\"update\",\"position\":%d,\"symbol\":\"%c\"}",
     position,symbol);
 
+    /* Send board update to both players */
     ws_send(g->player1,update);
     ws_send(g->player2,update);
 
+    /* Check win */
     if(check_winner(g->board)){
 
         char winmsg[64];
@@ -255,6 +282,7 @@ void handle_move(int client_fd,int position){
 
         cleanup_game(g);
     }
+    /* Check draw */
     else if(check_draw(g->board)){
 
         ws_send(g->player1,"{\"type\":\"draw\"}");
@@ -263,11 +291,9 @@ void handle_move(int client_fd,int position){
         cleanup_game(g);
     }
 }
-
-
 /*
-Handling forced exit request
-Opponent is declared winner
+Handling forced exit request.
+Opponent is declared winner.
 */
 void handle_exit(int client_fd){
 
@@ -297,9 +323,59 @@ void handle_exit(int client_fd){
 
 
 /*
+Decode WebSocket frame.
+Client frames are masked.
+We unmask payload using masking key.
+*/
+int ws_decode_frame(char *buffer, int bytes, char *data_out) {
+
+    if(bytes < 6) return -1;
+
+    int payload_len = buffer[1] & 127;
+
+    unsigned char *mask = (unsigned char*)(buffer + 2);
+
+    for(int i=0;i<payload_len;i++)
+        data_out[i] = buffer[i+6] ^ mask[i%4];
+
+    data_out[payload_len] = '\0';
+
+    return payload_len;
+}
+
+
+/*
+Handle WebSocket message types.
+Currently supports:
+- move
+- exit
+*/
+void ws_handle_message(int client_fd, char *data) {
+
+    if(strstr(data, "\"type\":\"move\"")) {
+
+        int pos;
+        if(sscanf(data,
+        "{\"type\":\"move\",\"position\":%d}",
+        &pos)==1)
+            handle_move(client_fd,pos);
+    }
+    else if(strstr(data, "\"type\":\"exit\"")) {
+
+        handle_exit(client_fd);
+        close(client_fd);
+    }
+}
+
+
+/*
 Perform WebSocket handshake.
-Extract client key, append GUID,
-hash with SHA1 and Base64 encode.
+Steps:
+1. Extract Sec-WebSocket-Key
+2. Append GUID
+3. SHA1 hash
+4. Base64 encode
+5. Send HTTP 101 response
 */
 int websocket_handshake(int client_fd, char *request){
 
@@ -397,8 +473,31 @@ int websocket_handshake(int client_fd, char *request){
 }
 
 /*
+Handle WebSocket upgrade request.
+Called only once per client.
+*/
+void ws_handle_connection(int client_fd, char *buffer) {
+
+    websocket_handshake(client_fd,buffer);
+
+    /* Mark this client as WebSocket */
+    is_websocket[client_fd] = 1;
+
+    /* Pair players */
+    if(waiting_player==-1)
+        waiting_player=client_fd;
+    else{
+        start_game(waiting_player,client_fd);
+        waiting_player=-1;
+    }
+}
+
+/*
 Main event loop.
-Handles HTTP and WebSocket.
+Handles:
+- New connections
+- HTTP requests
+- WebSocket messages
 */
 int main(){
 
@@ -456,6 +555,7 @@ int main(){
 
         for(int i=0;i<n;i++){
 
+            /* New connection */
             if(events[i].data.fd==server_fd){
 
                 // accept(listen_socket, addr, addrlen)
@@ -483,6 +583,7 @@ int main(){
                     recv(client_fd,
                          buffer,BUFFER_SIZE,0);
 
+                /* Client disconnected */
                 if(bytes<=0){
 
                     handle_exit(client_fd);
@@ -490,64 +591,41 @@ int main(){
                     if(waiting_player == client_fd)
                         waiting_player = -1;
 
+                    is_websocket[client_fd] = 0;
+
                     close(client_fd);
                     continue;
                 }
                 
                 buffer[bytes]='\0';
 
-                if(strstr(buffer,"Upgrade: websocket")){
+                /* If still HTTP */
+                if(!is_websocket[client_fd]) {
 
-                    websocket_handshake(client_fd,buffer);
-
-                    if(waiting_player==-1)
-                        waiting_player=client_fd;
-                    else{
-                        start_game(waiting_player,
-                                   client_fd);
-                        waiting_player=-1;
+                    /* WebSocket upgrade request */
+                    if(strstr(buffer,"Upgrade: websocket")) {
+                        ws_handle_connection(client_fd, buffer);
                     }
-                }
-                else if(strncmp(buffer,"GET",3)==0){
+                    /* Normal HTTP GET */
+                    else if(strncmp(buffer,"GET",3)==0){
 
-                    char method[8],path[256];
+                        char method[8],path[256];
 
-                    // sscanf parses method and path
-                    sscanf(buffer,"%s %s",
-                           method,path);
+                        sscanf(buffer,"%s %s",
+                               method,path);
 
-                    serve_file(client_fd,path);
-                    close(client_fd);
-                }
-                else{
-
-                    int payload_len=buffer[1]&127;
-                    unsigned char *mask=
-                        (unsigned char*)(buffer+2);
-
-                    char data[BUFFER_SIZE];
-
-                    for(int j=0;j<payload_len;j++)
-                        data[j]=buffer[j+6]^mask[j%4];
-
-                    data[payload_len]='\0';
-
-                    int pos;
-
-                    if(strstr(data, "\"type\":\"move\"")){
-
-                        int pos;
-                        if(sscanf(data,
-                        "{\"type\":\"move\",\"position\":%d}",
-                        &pos)==1)
-                            handle_move(client_fd,pos);
-                    }
-                    else if(strstr(data, "\"type\":\"exit\"")){
-
-                        handle_exit(client_fd);
-
+                        serve_file(client_fd,path);
                         close(client_fd);
                     }
+                }
+                else{
+                    /* Already WebSocket connection */
+                    char data[BUFFER_SIZE];
+
+                    int len = ws_decode_frame(buffer, bytes, data);
+
+                    if(len > 0)
+                        ws_handle_message(client_fd, data);
                 }
             }
         }
